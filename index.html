@@ -1,113 +1,63 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
+    <script src="coi-serviceworker.js"></script>
     <meta charset="UTF-8">
-    <title>BLIP AI 圖像辨識 Pro - 效能分析版</title>
+    <title>BLIP AI 圖像辨識 Pro - 雙模組切換版</title>
     <style>
+        /* 保持原有的 CSS，新增一些控制元件樣式 */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 20px auto; text-align: center; background: #f4f7f9; color: #1c1e21; }
         .container { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
-
         #preview { margin-top: 20px; border-radius: 12px; display: none; max-width: 100%; height: auto; border: 4px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
 
-        /* 效能看板 */
+        .mode-selector { background: #eee; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: center; gap: 20px; align-items: center; }
+        .mode-selector label { font-weight: bold; cursor: pointer; }
+
         .perf-dashboard { display: flex; justify-content: space-around; background: #2c3e50; color: white; padding: 15px; border-radius: 12px; margin: 20px 0; font-size: 0.85em; }
-        .perf-item { display: flex; flex-direction: column; }
         .perf-value { font-size: 1.2em; font-weight: bold; color: #3498db; }
-
-        /* 方案卡片樣式 */
-
-        .option-card {
-
-        background: white;
-
-        border-radius: 12px;
-
-        padding: 16px;
-
-        margin-bottom: 15px;
-
-        border-left: 6px solid #007bff;
-
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-
-        /* 淡入並向上滑動的動畫 */
-
-        animation: slideIn 0.4s ease-out forwards;
-
-        }
-
-
-
-        @keyframes slideIn {
-
-        from { opacity: 0; transform: translateY(15px); }
-
-        to { opacity: 1; transform: translateY(0); }
-
-        }
-
-
-
-        .option-tag {
-
-        font-size: 0.85em;
-
-        font-weight: bold;
-
-        color: #007bff;
-
-        margin-bottom: 6px;
-
-        letter-spacing: 1px;
-
-        }
-
-
-
+        .progress-container { width: 100%; height: 8px; background: #eee; border-radius: 4px; margin: 10px 0; overflow: hidden; display: none; }
+        .progress-bar { width: 0%; height: 100%; background: #007bff; transition: width 0.2s; }
+        .option-card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 15px; border-left: 6px solid #007bff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: left; }
+        .option-tag { font-size: 0.85em; font-weight: bold; color: #007bff; }
         .zh-text { font-size: 1.1em; font-weight: 600; color: #333; }
-
-        .en-text { font-size: 0.9em; color: #777; margin-top: 8px; font-style: italic; }
-
-
-
-        /* 迷你載入動畫 */
-
-        .loading-mini { margin: 15px 0; color: #007bff; font-weight: 500; text-align: center; }
-
-
-
-
-
-        .stats { font-size: 0.85em; color: #90949c; margin-top: 20px; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
-
-        .loading { color: #007bff; font-weight: bold; font-size: 1.2em; animation: pulse 1.5s infinite; }
-
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-
-
-        input[type="file"] { margin: 20px 0; padding: 10px; background: #fff; border-radius: 8px; border: 1px dashed #007bff; cursor: pointer; }
+        .en-text { font-size: 0.9em; color: #777; margin-top: 8px; }
+        .loading { color: #007bff; font-weight: bold; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>BLIP 智慧影像敘事</h1>
-    <p style="color: #7f8c8d;">全流程耗時監控：從載入模型到多維度解碼</p>
 
-    <div class="perf-dashboard" id="perfDashboard">
-        <div class="perf-item"><span>系統初始化</span><span class="perf-value"
-                                                            id="initTime">- ms</span></div>
-        <div class="perf-item"><span>特徵提取</span><span class="perf-value"
-                                                          id="visionTime">- ms</span></div>
-        <div class="perf-item"><span>平均解碼</span><span class="perf-value"
-                                                          id="avgDecodeTime">- ms</span></div>
+    <div class="mode-selector">
+        <span>選擇運行模式：</span>
+        <label>
+            <input type="radio" name="modelMode" value="int8" checked>
+            相容模式 (Int8 / CPU)
+        </label>
+        <label>
+            <input type="radio" name="modelMode" value="full">
+            高效能模式 (FP32 / GPU)
+        </label>
+        <button id="reloadBtn" style="padding: 5px 15px; cursor: pointer;">套用變更</button>
     </div>
 
-    <input type="file" id="imgInput" accept="image/*"/>
+    <div class="perf-dashboard">
+        <div class="perf-item"><span>裝置狀態</span><br><span class="perf-value" id="deviceStatus">-</span></div>
+        <div class="perf-item"><span>影像提取</span><br><span class="perf-value" id="visionTime">- ms</span></div>
+        <div class="perf-item"><span>平均解碼</span><br><span class="perf-value" id="avgDecodeTime">- ms</span></div>
+    </div>
+
+    <div id="loading-area">
+        <div id="status-text">請選擇模式並點擊套用...</div>
+        <div class="progress-container" id="p-cont" style="display:block;"><div class="progress-bar" id="p-bar"></div></div>
+    </div>
+
+    <input type="file" id="imgInput" accept="image/*" />
     <br>
     <img id="preview" width="384" height="384"/>
-    <div id="caption">正在等待系統初始化...</div>
+    <div id="caption"></div>
 </div>
 
 <script type="module">
@@ -117,34 +67,42 @@
     env.allowLocalModels = false;
     env.useBrowserCache = true;
 
-    const VISION_ONNX = "/models/blip_vision.onnx";
-    const DECODER_ONNX = "/models/blip_text_decoder.onnx";
+    // 模型路徑配置
+    const MODELS = {
+        int8: {
+            vision: "/models/blip_vision_int8.onnx",
+            decoder: "/models/blip_text_decoder_int8.onnx",
+            provider: ["wasm"], // int8 版本通常在 WASM 下最穩定
+            label: "CPU (Int8)"
+        },
+        full: {
+            vision: "/models/blip_vision.onnx",
+            decoder: "/models/blip_text_decoder.onnx",
+            provider: ["webgpu", "wasm"], // 優先使用 GPU
+            label: "GPU (WebGPU)"
+        }
+    };
 
     let visionSession, decoderSession, tokenizer;
 
-    // 在 init 之前先嘗試清理舊資源
     async function cleanup() {
-        try {
-            if (visionSession) {
-                await visionSession.release();
-                visionSession = null;
-            }
-            if (decoderSession) {
-                await decoderSession.release();
-                decoderSession = null;
-            }
-            console.log("已清理舊的 AI 會話資源");
-        } catch (e) {
-            console.warn("清理資源時發生錯誤:", e);
-        }
+        if (visionSession) { await visionSession.release(); visionSession = null; }
+        if (decoderSession) { await decoderSession.release(); decoderSession = null; }
+        console.log("舊資源已釋放");
     }
 
-    // 新增：帶有進度回傳的下載函式
     async function fetchWithProgress(url, label) {
-        const response = await fetch(url);
-        const reader = response.body.getReader();
-        const contentLength = +response.headers.get('Content-Length');
+        const cache = await caches.open('blip-models-v2'); // 升級快取版本
+        const cachedResponse = false;//await cache.match(url);
+        if (cachedResponse) {
+            document.getElementById("p-bar").style.width = (100) + "%";
+            return await cachedResponse.arrayBuffer();
+        }
 
+        document.getElementById("p-cont").style.display = "block";
+        const response = await fetch(url);
+        const contentLength = +response.headers.get('Content-Length');
+        const reader = response.body.getReader();
         let receivedLength = 0;
         let chunks = [];
 
@@ -153,160 +111,219 @@
             if (done) break;
             chunks.push(value);
             receivedLength += value.length;
-
-            // 計算百分比並更新介面
-            const percent = ((receivedLength / contentLength) * 100).toFixed(0);
-            updateStatus(`正在載入 ${label}: ${percent}%`, true);
+            document.getElementById("p-bar").style.width = ((receivedLength / contentLength) * 100) + "%";
         }
 
-        // 將所有區塊合併成一個 Uint8Array
-        let allChunks = new Uint8Array(receivedLength);
+        const allChunks = new Uint8Array(receivedLength);
         let position = 0;
         for(let chunk of chunks) {
             allChunks.set(chunk, position);
             position += chunk.length;
         }
+        await cache.put(url, new Response(allChunks.buffer));
         return allChunks.buffer;
     }
 
-    // 修改後的 init
     async function init() {
-        await cleanup();
-        const start = performance.now();
-        try {
-            updateStatus("正在初始化 Tokenizer...", true);
-            tokenizer = await AutoTokenizer.from_pretrained('Salesforce/blip-image-captioning-base');
+        const mode = document.querySelector('input[name="modelMode"]:checked').value;
+        const config = MODELS[mode];
 
-            const options = {
-                executionProviders: ort.env.webgpu ? ["webgpu"] : ["wasm"],
+        await cleanup();
+        updateStatus(`正在切換至 ${config.label} 模式...`, true);
+        document.getElementById("p-bar").style.width = "0%";
+
+        try {
+            if (!tokenizer) {
+                tokenizer = await AutoTokenizer.from_pretrained('Salesforce/blip-image-captioning-base');
+            }
+
+            const opt = {
+                executionProviders: config.provider,
                 graphOptimizationLevel: "all"
             };
 
-            // --- 核心修改：先下載，後載入 ---
-            const visionBuffer = await fetchWithProgress(VISION_ONNX, "影像編碼器");
-            visionSession = await ort.InferenceSession.create(visionBuffer, options);
+            const vBuf = await fetchWithProgress(config.vision, `影像模型`);
+            visionSession = await ort.InferenceSession.create(vBuf, opt);
 
-            const decoderBuffer = await fetchWithProgress(DECODER_ONNX, "文字解碼器");
-            decoderSession = await ort.InferenceSession.create(decoderBuffer, options);
-            // ------------------------------
+            const dBuf = await fetchWithProgress(config.decoder, `解碼模型`);
+            decoderSession = await ort.InferenceSession.create(dBuf, opt);
 
-            const end = performance.now();
-            document.getElementById("initTime").innerText = (end - start).toFixed(0) + " ms";
+            document.getElementById("deviceStatus").innerText = visionSession.handler?.deviceType?.toUpperCase() || config.label;
             updateStatus("系統就緒，請上傳圖片");
         } catch (e) {
             console.error(e);
-            updateStatus("初始化失敗，請檢查網路或路徑。");
+            updateStatus(`<span style="color:red">啟動失敗: ${e.message}</span>`);
         }
+        console.log("visionSession模型需要的輸入名稱:", visionSession.inputNames);
+        console.log("visionSession模型需要的輸出名稱:", visionSession.outputNames);
+        console.log("decoderSession模型需要的輸入名稱:", decoderSession.inputNames);
+        console.log("decoderSession模型需要的輸出名稱:", decoderSession.outputNames);
     }
 
-    function imageToTensor(img) {
+    async function imageToTensor(imgEl) {
         const size = 384;
         const canvas = document.createElement("canvas");
-        canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext("2d", { colorSpace: "srgb" });
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-        const scale = Math.max(size / img.width, size / img.height);
-        const nw = img.width * scale, nh = img.height * scale;
-        const ox = (size - nw) / 2, oy = (size - nh) / 2;
+        // 1. 確保圖片載入
+        if (!imgEl.complete) {
+            await new Promise(resolve => { imgEl.onload = resolve; });
+        }
 
-        ctx.fillStyle = "white"; ctx.fillRect(0, 0, size, size);
-        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, ox, oy, nw, nh);
+        // 2. 繪製並取得像素資料 (RGBA)
+        ctx.drawImage(imgEl, 0, 0, size, size);
+        const imageData = ctx.getImageData(0, 0, size, size).data;
 
-        const data = ctx.getImageData(0, 0, size, size).data;
+        // 3. 準備 RGB Tensor 資料空間 (size * size * 3)
+        const stride = size * size;
+        const floatData = new Float32Array(stride * 3);
+
+        // 預定義標準化參數
         const mean = [0.48145466, 0.4578275, 0.40821073];
         const std = [0.26862954, 0.26130258, 0.27577711];
 
-        const floatData = new Float32Array(size * size * 3);
-        const stride = size * size;
-
+        // 4. 手動轉換：從 RGBA (4通道) 轉為 NCHW RGB (3通道)
         for (let i = 0; i < stride; i++) {
-            const p = i << 2;
-            floatData[i] = (data[p] / 255 - mean[0]) / std[0];
-            floatData[i + stride] = (data[p + 1] / 255 - mean[1]) / std[1];
-            floatData[i + stride * 2] = (data[p + 2] / 255 - mean[2]) / std[2];
+            const p = i << 2; // 像素點在 imageData 中的起始索引 (i * 4)
+
+            // R 通道存放在 [0 ~ stride-1]
+            floatData[i] = (imageData[p] / 255 - mean[0]) / std[0];
+            // G 通道存放在 [stride ~ 2*stride-1]
+            floatData[i + stride] = (imageData[p + 1] / 255 - mean[1]) / std[1];
+            // B 通道存放在 [2*stride ~ 3*stride-1]
+            floatData[i + stride * 2] = (imageData[p + 2] / 255 - mean[2]) / std[2];
+
+            // 這裡完全不讀取 imageData[p + 3]，所以透明度會被徹底丟棄
         }
+
+        // 5. 建立 Tensor，形狀明確設定為 [1, 3, 384, 384]
         return new ort.Tensor("float32", floatData, [1, 3, size, size]);
     }
 
-    function getTopK(logits, k) {
-        const topK = Array(k).fill({ v: -Infinity, i: -1 });
-        for (let i = 0; i < logits.length; i++) {
-            if (logits[i] > topK[k - 1].v) {
-                topK[k - 1] = { v: logits[i], i };
-                topK.sort((a, b) => b.v - a.v);
-            }
-        }
-        return topK;
-    }
-
     /**
-     * 優化版影像描述生成函數
-     * @param {Object} visionOutput - Vision Encoder 的執行結果
-     * @param {string} customPrompt - 起始引導語
+     * 提升精準度：客觀描述圖片生成函數
+     * 優化點：低溫解碼、重複懲罰、防止跳針邏輯
      */
     async function generateCaption(visionOutput, customPrompt) {
         try {
-            // 1. 提取 Encoder Hidden States
+            // 1. 提取並驗證 Vision Encoder 輸出
             const encoder_hidden_states = visionOutput.last_hidden_state || visionOutput[Object.keys(visionOutput)[0]];
             if (!encoder_hidden_states) throw new Error("無法取得 vision encoder 輸出");
 
-            // 2. 初始化 Prompt 與 Token
-            const promptText = String(customPrompt || "a picture of");
-            const encoded = await tokenizer(promptText, { add_special_tokens: false });
+            // 2. 初始化 Prompt (客觀描述建議使用 a photo of)
+            const promptText = String(customPrompt || "a photo of");
+            const encoded = await tokenizer(promptText, { add_special_tokens: true });
 
-            // 取得 Token IDs (支援多種 Transformers.js 版本格式)
-            const promptTokenIds = Array.from(encoded.input_ids?.data || encoded.input_ids || encoded);
+            // 確保 Token IDs 為純數字陣列，避免 BigInt 導致 decode 報錯
+            const promptTokenIds = Array.from(encoded.input_ids?.data || encoded.input_ids || encoded).map(Number);
+            let generated = [...promptTokenIds];
+            const promptLen = generated.length;
 
-            // 初始化生成的陣列 (Number 型態方便邏輯運算)
-            const promptTokens = promptTokenIds.map(id => BigInt(id));
-            let generated = promptTokens.map(Number);
-
-            // 3. 生成參數設定
+            // 3. 配置：客觀描述的黃金參數
             const config = {
-                maxLen: 30,
-                minLen: 5
+                maxLen: 25,           // 限制長度，避免過度推論
+                minLen: 5,            // 確保句子完整
+                temperature: 0.5,     // 低溫：確保精準與客觀 (原 1.5 太高會亂碼)
+                repetitionPenalty: 1.5, // 強力防止 "a cat on a cat..."
+                stopTokens: [2, 102, 50256], // 常見結束符
+                noRepeatSize: 2       // 禁止連續出現重複的 token 組合
             };
 
-            // 4. 自回歸解碼迴圈
+            // 4. 自回歸生成循環
             for (let step = 0; step < config.maxLen; step++) {
-                const input_ids = new ort.Tensor(
+                // 建立輸入 Tensor
+                const inputIdsTensor = new ort.Tensor(
                     "int64",
                     BigInt64Array.from(generated.map(BigInt)),
                     [1, generated.length]
                 );
 
-                const decoderOutputs = await decoderSession.run({
-                    input_ids,
-                    encoder_hidden_states
-                });
+                const inputs = {
+                    "input_ids": inputIdsTensor,
+                    "encoder_hidden_states": encoder_hidden_states
+                };
 
-                const logits = Array.from(decoderOutputs.logits.data);
-                const vocabSize = logits.length / input_ids.dims[1];
-                const lastLogits = logits.slice(-vocabSize);
+                if (decoderSession.inputNames.includes("attention_mask")) {
+                    inputs["attention_mask"] = new ort.Tensor(
+                        "int64",
+                        new BigInt64Array(generated.length).fill(1n),
+                        [1, generated.length]
+                    );
+                }
 
-                // Greedy argmax
-                let nextTokenId = lastLogits.indexOf(Math.max(...lastLogits));
+                // 執行推理
+                const decoderOutputs = await decoderSession.run(inputs);
+                const logitsData = decoderOutputs.logits.data;
 
-                const currentGenLen = generated.length - promptTokens.length;
-                const STOP_TOKENS = new Set([2]); // 或 2, 102
-                if (STOP_TOKENS.has(nextTokenId) && currentGenLen >= config.minLen) break;
+                // 5. 提取最後一個 Token 的 Logits
+                const vocabSize = logitsData.length / generated.length;
+                let lastTokenLogits = Array.from(logitsData.slice(-vocabSize));
+
+                // --- 核心優化：Logits 處理 ---
+
+                // A. 重複懲罰 (Penalty)
+                const seen = new Set(generated);
+                for (let i = 0; i < lastTokenLogits.length; i++) {
+                    if (seen.has(i)) {
+                        lastTokenLogits[i] = lastTokenLogits[i] > 0 ?
+                            lastTokenLogits[i] / config.repetitionPenalty :
+                            lastTokenLogits[i] * config.repetitionPenalty;
+                    }
+                }
+
+                // B. 溫度縮放 (Temperature Scaling)
+                lastTokenLogits = lastTokenLogits.map(v => v / config.temperature);
+
+                // C. 禁止立即重複上一個字 (防止出現 - - -)
+                const prevToken = generated[generated.length - 1];
+                lastTokenLogits[prevToken] -= 50.0;
+
+                // D. 貪婪選取 (Greedy Search)
+                let nextTokenId = 0;
+                let maxLogit = -Infinity;
+                for (let i = 0; i < lastTokenLogits.length; i++) {
+                    if (lastTokenLogits[i] > maxLogit) {
+                        maxLogit = lastTokenLogits[i];
+                        nextTokenId = i;
+                    }
+                }
+
+                // 6. 停止條件檢查
+                const currentGenLen = generated.length - promptLen;
+
+                // 處理 EOS (結束符)
+                if (config.stopTokens.includes(nextTokenId)) {
+                    if (currentGenLen >= config.minLen) {
+                        break; // 滿足長度，結束
+                    } else {
+                        // 太短了，強迫選機率第二高的詞，避開結束符
+                        lastTokenLogits[nextTokenId] = -Infinity;
+                        nextTokenId = lastTokenLogits.indexOf(Math.max(...lastTokenLogits));
+                    }
+                }
 
                 generated.push(nextTokenId);
             }
 
-            const captionTokens = generated.slice(promptTokens.length);
+            // 7. 提取生成內容並解碼
+            const captionTokens = generated.slice(promptLen);
 
-            // 6. 解碼回文字
+            if (captionTokens.length === 0) {
+                return "No description generated.";
+            }
+
             const result = await tokenizer.decode(captionTokens, {
                 skip_special_tokens: true
             });
 
-            return result.trim();
+            // 最終清理 (移除可能殘留的子詞符號)
+            return result.replace(/##/g, '').trim() || "Empty result.";
 
         } catch (err) {
             console.error("Caption Generation Failed:", err);
-            return "Failed to generate description.";
+            return `Error: ${err.message}`;
         }
     }
 
@@ -347,7 +364,7 @@
 
             // 2. 特徵提取耗時
             const tVisionStart = performance.now();
-            const imgTensor = imageToTensor(imgEl);
+            const imgTensor = await imageToTensor(imgEl);
             const visionOutput = await visionSession.run({ pixel_values: imgTensor });
             const visionTime = (performance.now() - tVisionStart).toFixed(0);
             document.getElementById("visionTime").innerText = visionTime + " ms";
@@ -357,6 +374,12 @@
              * 包含：標籤 (label)、引導語 (prompt)、代碼鍵值 (key)、分析目的 (purpose)
              */
             const VISION_ANALYSIS_CONFIG = [
+                {
+                    label: "自由發揮",
+                    key: "free",
+                    prompt: "",
+                    purpose: "自由發揮"
+                },
                 {
                     label: "整體概況",
                     key: "overview",
@@ -433,18 +456,24 @@
         }
     }
 
-    await init();
-
+    // 事件監聽
+    document.getElementById("reloadBtn").addEventListener("click", () => {
+        const img = document.getElementById("preview");
+        img.src = "";
+        img.style.display = "none";
+        init();
+    });
     document.getElementById("imgInput").addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        updateStatus("載入圖片...");
         const img = document.getElementById("preview");
         img.src = URL.createObjectURL(file);
         img.style.display = "inline-block";
         img.onload = () => run(img);
     });
-</script>
 
+    // 初始載入
+    init();
+</script>
 </body>
 </html>
